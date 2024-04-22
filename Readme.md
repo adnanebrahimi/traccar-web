@@ -63,21 +63,35 @@ CMD ["nginx", "-g", "daemon off;"]
 You would need an `nginx.conf` tailored for serving the React build, which generally looks like:
 ```nginx
 server {
-    # make sure you are listening to the right port
+  # make sure you are listening to the right port
     listen       80;
     server_name  localhost;
 
-    location / {
+  location / {
         root   /usr/share/nginx/html;
         index  index.html index.htm;
         try_files $uri /index.html;
     }
 
-    error_page 500 502 503 504  /50x.html;
-    location = /50x.html {
+  error_page 500 502 503 504  /50x.html;
+  location = /50x.html {
         root   /usr/share/nginx/html;
     }
+
+ location /api/ {
+    proxy_pass http://traccar:8082;  # Proxy to your Traccar service
+    proxy_http_version 1.1;
+
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_read_timeout 7d;  # Adjust based on your application's needs
 }
+
+}
+
 ```
 
 ### 4. docker-compose.yml
@@ -97,22 +111,38 @@ services:
       - "5000-5150:5000-5150"
       - "8082:8082"
     environment:
-      - MYSQL_DATABASE=traccar
-      - MYSQL_USER=traccar
-      - MYSQL_PASSWORD=mypw
+      MYSQL_DATABASE: traccar
+      MYSQL_USER: traccar
+      MYSQL_PASSWORD: Traccar.110
 
   db:
     image: mysql:8.0.20
     container_name: db
-    command: --default-authentication-plugin=mysql_native_password
     restart: always
     volumes:
       - ./mysql-volume/data:/var/lib/mysql
-      - ./mysql-volume/conf:/etc/mysql/conf.d
+     # - ./mysql-volume/conf:/etc/mysql/conf.d
     ports:
       - "3306:3306"
     environment:
-      - MYSQL_ROOT_PASSWORD=Adnan.110
+      MYSQL_ROOT_PASSWORD: Adnan.110
+      MYSQL_DATABASE: traccar
+      MYSQL_USER: traccar
+      MYSQL_PASSWORD: Traccar.110
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: pma
+    links:
+      - db
+    environment:
+      PMA_HOST: db
+      PMA_PORT: 3306
+      PMA_ARBITRARY: 1
+    restart: always
+    ports:
+      - 8081:80
+
 
   traccar-web:
     build:
@@ -121,7 +151,10 @@ services:
     container_name: traccar-web
     restart: always
     ports:
-      - "8088:8082"
+      - "81:80"
+    volumes:
+      - ./traccar-web-volume/nginx.conf:/etc/nginx/conf.d/default.conf
+
 ```
 
 ### Additional Notes:
